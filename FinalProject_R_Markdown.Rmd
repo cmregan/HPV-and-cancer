@@ -1,0 +1,801 @@
+---
+title: "Predicting Cancer from HPV Positivity and Associated Risk Factors"
+author: "Cassie Regan, Aiola Cikaj, Faras Sadek"
+date: "May 4, 2016"
+output: html_document
+---
+
+#Overview and Motivation
+
+With a collective interest and background experience in public health and cancer, our group decided to focus our project on predicting cancer rates based on HPV positivity and other associated risk factors. It is widely known that HPV infections, when left untreated, can progress into certain cancers. While the percentage of infections that eventually progress is quite low, the risk of progression can be amplified by certain lifestyle choices and habits- such as smoking or parity. In this analysis, we examined the correlation between HPV positivity and various lifestyle choices and tried to predict cancer incidence based on a person's lifestyle history. We examined many different lifestyle choices to determine which are correlated with HPV and if they have any impact on the eventual progression to cancer. Currently, there is an abundance of data on HPV progression into cervical cancer, but less on HPV progression in other cancers. Additonally, male HPV acquisition and their resulting infections have not been studied in great detail. Since there is little information, we hoped to focus our analysis on all cancers that can be a result of lasting HPV infection.
+	
+#Initial Questions
+	
+Main Question: Can we use model learning to predict cancer incidence using a training and test set with information on a person's lifestyle?
+	
+Additional questions:
+	
+1. What risk factors are associated with HPV positivity? What risk factors are associated with cancer? 
+	
+2. Are there differences in the incidence and progression of HPV between different cancers?
+	
+These questions remained the focus throughout our project. Initially we had hoped to compare and investigate cancer incidence in European countries, but without sufficient publically available data, this was not possible.
+
+#Data
+
+For this analysis we used data from the National Health and Nutrition Examination Survey (NHANES). This data is a nationally representative survey with data on demographics, diet, HPV positivity  (from laboratory examination), smoking, income, education, and other lifestyle areas. We combined this data with cancer incidence data from the Surveillance, Epidemiology, and End Results Program (SEER). This data source provides cancer incidence (and other metrics) in the United States. We included incidence rates for Oropharyngeal, Penile, Vaginal, Vulvar, Cervical, and Anal cancer- all of which have been proven to stem from HPV infections. The NHANES dataset is publically available to download in a SAS XPORT form, which can be imported into R for analysis. The SEER data is downloaded through the SEER Stat software and exported in excel format, before being entered into R. The main source of data cleanup comes through wrangling large datasets and moving the data into a usable form.
+
+#Exploratory Analysis
+	
+After combining all data into one usable dataset, we were able to begin exploratory analysis. Throughout the data wrangling and clean up, we examined different distributions of risk factors we chose to include in our analysis (diet, smoking history, parity, poverty level, education, martial status, gender, race, diet, and HPV infection). More information on those findings can be found in more detail below. We considered dimention reduction and fit different models using logistic and linear regression. A second order term  regression was considered to look for significant interaction. The final model was reached using stepwise regression based on p-values, main effects, and R^2 values.  
+	
+#Final Analysis
+
+In our analysis we concluded that:
+On average the number of HPV positive males that will progress to cancer is 0.07 per 10,000 male, or 7 in 1,000,000 all else held constant.
+This number is only slighlty higher for women, 9 in 1,000,000. 
+The above numbers will change when we control for smoking, education, race, poverty rate, the type of HPV and the number of calories consumed daily.
+We found a main effect between people who smoke and cancer rate, hispanics and cancer rate and people who don't have higher eduction and cancer rates. We also tested for different types of diets, but the current data was inconclusive. As a result we ommited the diet variables from the final model. A more in depth analysis between cancer rates and types of diet is suggested for future studies. 
+We answered our questions by establishing a relationship between a person's lifestyle, cancer rates and high-risk types of HPV.
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(cache = TRUE, message = FALSE)
+
+options(dplyr.print_min = 5)
+```
+
+
+#BUILDING NHANES TABLE
+
+```{r}
+library(Hmisc)
+library(dplyr)
+library(tidyr)
+
+#loading in all files
+Demo0506 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/DEMO_D2005_2006.XPT")
+Demo0708 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/DEMO_E2007_2008.XPT")
+Demo0910 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/DEMO_F2009_2010.XPT")
+Demo1112 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/DEMO_G2011_2012.XPT")
+
+HPV0506 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/HPV2005_2006.XPT")
+HPV0708 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/HPV2007_2008.XPT")
+HPV0910 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/HPV2009_2010.XPT")
+
+
+HPV0506swab <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/HPVswab2005_2006.XPT")
+HPV0708swab <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/HPVswab2007_2008.XPT")
+HPV0910swab <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/HPVswab2009_2010.XPT")
+HPV1112swab <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/HPVswab2011_2012.XPT")
+
+HPV0910oral <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/HPVoral2009_2010.XPT")
+HPV1112oral <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/HPVoral2011_2012.XPT")
+
+diet0506 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/diet_2005_2006.XPT")
+diet0708 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/diet_2007_2008.XPT")
+diet0910 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/diet_2009_2010.XPT")
+diet1112 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/diet_2011_2012.XPT")
+
+smoke0506 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/smoke_2005_2006.XPT")
+smoke0708 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/smoke_2007_2008.XPT")
+smoke0910 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/smoke_2009_2010.XPT")
+smoke1112 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/smoke_2011_2012.XPT")
+
+rep0506 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/reproductive_2005_2006.XPT")
+rep0708 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/reproductive_2007_2008.XPT")
+rep0910 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/reproductive_2009_2010.XPT")
+rep1112 <- sasxport.get("/Users/aiolaiola/Documents/Development/nocancer/NHANES/reproductive_2011_2012.XPT")
+
+Demdiet0506 <- full_join(Demo0506, diet0506)
+Demdiet0708 <- full_join(Demo0708, diet0708)
+Demdiet0910 <- full_join(Demo0910, diet0910)
+Demdiet1112 <- full_join(Demo1112, diet1112)
+
+HPVandSwab0506 <- full_join(HPV0506, HPV0506swab)
+HPVandSwab0708 <- full_join(HPV0708, HPV0708swab)
+HPVandSwab0910 <- full_join(HPV0910, HPV0910swab)
+HPVandSwab1112 <- HPV1112swab
+
+RepSmoke0506 <- full_join(rep0506, smoke0506)
+RepSmoke0708 <- full_join(rep0708, smoke0708)
+RepSmoke0910 <- full_join(rep0910, smoke0910)
+RepSmoke1112 <- full_join(rep1112, smoke1112)
+
+
+
+#Merging files
+NHANES0506 <- full_join(Demdiet0506, HPVandSwab0506, by = "seqn")
+NHANES0506 <- full_join(NHANES0506, RepSmoke0506, by = "seqn")
+
+NHANES0708 <- full_join(Demdiet0708, HPVandSwab0708, by = "seqn")
+NHANES0708 <- full_join(NHANES0708, RepSmoke0708, by = "seqn")
+
+NHANES0910 <- full_join(Demdiet0910, HPVandSwab0910, by = "seqn")
+NHANES0910 <- full_join(NHANES0910, RepSmoke0910, by = "seqn")
+NHANES0910 <- full_join(NHANES0910, HPV0910oral, by ="seqn")
+
+NHANES1112 <- full_join(Demdiet1112, HPVandSwab1112, by = "seqn")
+NHANES1112 <- full_join(NHANES1112, RepSmoke1112, by = "seqn")
+NHANES1112 <- full_join(NHANES1112, HPV1112oral, by ="seqn")
+
+
+#Adding years- NOTE: using second year as indicator, but survey spans 2 years
+NHANES0506$year <- "2006"
+NHANES0708$year <- "2008"
+NHANES0910$year <- "2010"
+NHANES1112$year <- "2012"
+
+#creating master NHANES dataset
+NHANES <- merge(NHANES0506, NHANES0708, all = TRUE)
+NHANES <- merge(NHANES, NHANES0910, all = TRUE)
+NHANES <- merge(NHANES, NHANES1112, all = TRUE)
+
+save(NHANES, file = "NHANES.Rda")
+```
+
+
+
+```{r}
+rm(list= ls()[!(ls() %in% c('NHANES','all_gather', 'cancer_types', 'dat'))])
+
+NHANES <- NHANES %>%
+  select(c(seqn, wtdrd1, drqsdiet, drqsdt1, drqsdt2, drqsdt3, drqsdt4, drqsdt5, drqsdt6, drqsdt7, drqsdt8, drqsdt91, dr1tkcal, riagendr, ridageyr, ridreth1, wtmec2yr, sdmvpsu, sdmvstra, lbdr06, lbdr11, lbdr16, lbdr18, lbdr31, lbdr33, lbdr45, lbdr52, lbdr58, orxh16, rhq166, rhq160, smq040, year, dmdeduc2, dmdmartl, indfmpir))
+
+#Changing column names
+names(NHANES) <- c("respID", "dietweight", "specialdiet", "weightloss_lowcal_lowcarb_hipro", "lowfat", "lowNA", "sugfree", "lowfiber", "hifiber", "diabeticdiet", "weightgain", "othrediet", "kcal", "gender", "age", "race", "examwt", "PSU", "stratum", "hpv6", "hpv11", "hpv16", "hpv18", "hpv31", "hpv33", "hpv45", "hpv52", "hpv58", "oralhpv16", "numbirth", "numpreg", "smoke" ,"year", "education", "marital_status", "poverty_ratio")
+```
+ 
+## Recoding for gender and filtering for age:
+```{r}
+
+## matching Male and Female coding to the SEER table
+NHANES$gender.f = factor(NHANES$gender, labels = c(1, 0))
+
+NHANES <- NHANES %>% select(-c(gender, PSU, stratum))
+
+## filtering out for 0-15 years:
+
+NHANES$age <- as.numeric(NHANES$age)
+
+NHANES <- NHANES %>% filter(age >= 15)
+```
+
+##Recoding HPV variables:
+
+```{r}
+
+tmp <- NHANES %>% select(respID, contains("hpv")) 
+
+## 1 for hpv positive and 0 for negative. 
+tmp <- as.matrix(tmp)
+tmp[tmp == 2] <- 0
+tmp[tmp == 3] <- 0
+tmp[is.na(tmp)] <- 0
+
+tmp <- data.frame(tmp)
+
+NHANES <- NHANES %>% select(-(contains("hpv")))
+NHANES <- left_join(NHANES, tmp, by = "respID")
+
+rm(tmp)
+```
+
+##Recoding diet variables:
+
+```{r}
+
+tmp <- NHANES %>% select(respID, weightloss_lowcal_lowcarb_hipro, lowfat, lowNA, sugfree, lowfiber, hifiber, diabeticdiet, weightgain, othrediet) 
+
+## 1 for being on the specific diet and 0 for negative or missing. 
+tmp <- as.matrix(tmp)
+tmp[tmp > 1 & tmp < 3000] <- 1
+tmp[is.na(tmp)] <- 0
+
+tmp <- data.frame(tmp)
+
+NHANES <- NHANES %>% select(-c(weightloss_lowcal_lowcarb_hipro, lowfat, lowNA, sugfree, lowfiber, hifiber, diabeticdiet, weightgain, othrediet))
+
+NHANES <- left_join(NHANES, tmp, by = "respID")
+
+rm(tmp)
+
+```
+
+## Cleaning up other variables:
+```{r}
+
+#NHANES <- NHANES %>% select(- age_at_exam)
+
+## 1 for being on a special diet and o for negative
+NHANES$specialdiet[NHANES$specialdiet == 2] <- 0
+NHANES$specialdiet[NHANES$specialdiet == 9] <- NA
+
+
+```
+
+## HPV count for each year
+
+```{r}
+
+NHANES_year <- NHANES %>% group_by(year) %>% summarize(c.hpv6= sum(hpv6), c.hpv11= sum(hpv11), c.hpv16= sum(hpv16), c.hpv18= sum(hpv18), c.hpv31= sum(hpv31), c.hpv33= sum(hpv33), c.hpv45= sum(hpv45), c.hpv52=sum(hpv52), c.hpv58= sum(hpv58), c.oralhpv16= sum(oralhpv16)) 
+
+
+NHANES <- NHANES %>% select(-contains("hpv")) %>% left_join(NHANES_year, by= "year") 
+
+```
+
+
+#BUILDING SEER
+```{r}
+library(readxl)
+library(foreign)
+library(gdata)
+library(tidyr)
+library(dplyr)
+library(readr)
+
+#loading in files
+
+oro <- read_csv("/Users/aiolaiola/Documents/Development/nocancer/oro.csv")
+penile <- read_csv("/Users/aiolaiola/Documents/Development/nocancer/penile.csv")
+vaginal <- read_csv("/Users/aiolaiola/Documents/Development/nocancer/vaginal.csv")
+vulvar <- read_csv("/Users/aiolaiola/Documents/Development/nocancer/vulvar.csv")
+cervical <- read_csv("/Users/aiolaiola/Documents/Development/nocancer/cervical.csv")
+anal <- read_csv("/Users/aiolaiola/Documents/Development/nocancer/anal.csv")
+
+#wrangling- renaming columns
+names(oro) <- c("gender.f", "type", "age", "2000_rate", "2000_count", "2000_population", "2001_rate", "2001_count", "2001_population", "2002_rate", "2002_count", "2002_population", "2003_rate", "2003_count", "2003_population", "2004_rate", "2004_count", "2004_population", "2005_rate", "2005_count", "2005_population", "2006_rate", "2006_count", "2006_population", "2007_rate", "2007_count", "2007_population", "2008_rate", "2008_count", "2008_population", "2009_rate", "2009_count", "2009_population", "2010_rate", "2010_count", "2010_population", "2011_rate", "2011_count", "2011_population", "2012_rate", "2012_count", "2012_population")
+oro <- oro[-1,]
+
+names(penile) <- c("gender.f", "type", "age", "2000_rate", "2000_count", "2000_population", "2001_rate", "2001_count", "2001_population", "2002_rate", "2002_count", "2002_population", "2003_rate", "2003_count", "2003_population", "2004_rate", "2004_count", "2004_population", "2005_rate", "2005_count", "2005_population", "2006_rate", "2006_count", "2006_population", "2007_rate", "2007_count", "2007_population", "2008_rate", "2008_count", "2008_population", "2009_rate", "2009_count", "2009_population", "2010_rate", "2010_count", "2010_population", "2011_rate", "2011_count", "2011_population", "2012_rate", "2012_count", "2012_population")
+penile <- penile[-1,]
+
+names(vaginal) <- c("gender.f", "type", "age", "2000_rate", "2000_count", "2000_population", "2001_rate", "2001_count", "2001_population", "2002_rate", "2002_count", "2002_population", "2003_rate", "2003_count", "2003_population", "2004_rate", "2004_count", "2004_population", "2005_rate", "2005_count", "2005_population", "2006_rate", "2006_count", "2006_population", "2007_rate", "2007_count", "2007_population", "2008_rate", "2008_count", "2008_population", "2009_rate", "2009_count", "2009_population", "2010_rate", "2010_count", "2010_population", "2011_rate", "2011_count", "2011_population", "2012_rate", "2012_count", "2012_population")
+vaginal <- vaginal[-1,]
+
+names(vulvar) <- c("gender.f", "type", "age", "2000_rate", "2000_count", "2000_population", "2001_rate", "2001_count", "2001_population", "2002_rate", "2002_count", "2002_population", "2003_rate", "2003_count", "2003_population", "2004_rate", "2004_count", "2004_population", "2005_rate", "2005_count", "2005_population", "2006_rate", "2006_count", "2006_population", "2007_rate", "2007_count", "2007_population", "2008_rate", "2008_count", "2008_population", "2009_rate", "2009_count", "2009_population", "2010_rate", "2010_count", "2010_population", "2011_rate", "2011_count", "2011_population", "2012_rate", "2012_count", "2012_population")
+vulvar <- vulvar[-1,]
+
+names(cervical) <- c("gender.f", "type", "age", "2000_rate", "2000_count", "2000_population", "2001_rate", "2001_count", "2001_population", "2002_rate", "2002_count", "2002_population", "2003_rate", "2003_count", "2003_population", "2004_rate", "2004_count", "2004_population", "2005_rate", "2005_count", "2005_population", "2006_rate", "2006_count", "2006_population", "2007_rate", "2007_count", "2007_population", "2008_rate", "2008_count", "2008_population", "2009_rate", "2009_count", "2009_population", "2010_rate", "2010_count", "2010_population", "2011_rate", "2011_count", "2011_population", "2012_rate", "2012_count", "2012_population")
+cervical <- cervical[-1,]
+
+names(anal) <- c("gender.f", "type", "age", "2000_rate", "2000_count", "2000_population", "2001_rate", "2001_count", "2001_population", "2002_rate", "2002_count", "2002_population", "2003_rate", "2003_count", "2003_population", "2004_rate", "2004_count", "2004_population", "2005_rate", "2005_count", "2005_population", "2006_rate", "2006_count", "2006_population", "2007_rate", "2007_count", "2007_population", "2008_rate", "2008_count", "2008_population", "2009_rate", "2009_count", "2009_population", "2010_rate", "2010_count", "2010_population", "2011_rate", "2011_count", "2011_population", "2012_rate", "2012_count", "2012_population")
+anal <- anal[-1,]
+
+
+#adding organ column
+oro <- oro%>%
+  mutate(organ = "oro")
+
+penile <- penile%>%
+  mutate(organ = "penile")
+
+vaginal <- vaginal%>%
+  mutate(organ = "vaginal")
+
+vulvar <- vulvar%>%
+  mutate(organ = "vulvar")
+
+cervical <- cervical%>%
+  mutate(organ = "cervical")
+
+anal <- anal%>%
+  mutate(organ = "anal")
+
+#merging to combine organ datasets
+seer <- rbind(oro, penile)
+seer <- rbind(seer, vaginal)
+seer <- rbind(seer, vulvar)
+seer <- rbind(seer, cervical)
+seer <- rbind(seer, anal)
+
+#separating by year to make separate columns for rate, count, population, and year
+seer00<- seer %>%
+  select(contains("2000"), gender.f, type, age, organ)%>%
+  mutate(year = "2000")
+
+names(seer00) <- c("rate", "count", "population", "gender.f", "type", "age", "organ", "year")
+
+seer01<- seer %>%
+  select(contains("2001"), gender.f, type, age, organ)%>%
+  mutate(year = "2001")
+names(seer01) <- c("rate", "count", "population", "gender.f", "type", "age", "organ", "year")
+
+seer02<- seer %>%
+  select(contains("2002"), gender.f, type, age, organ)%>%
+  mutate(year = "2002")
+names(seer02) <- c("rate", "count", "population", "gender.f", "type", "age", "organ", "year")
+
+seer03<- seer %>%
+  select(contains("2003"), gender.f, type, age, organ)%>%
+  mutate(year = "2003")
+names(seer03) <- c("rate", "count", "population", "gender.f", "type", "age", "organ", "year")
+
+seer04<- seer %>%
+  select(contains("2004"), gender.f, type, age, organ)%>%
+  mutate(year = "2004")
+names(seer04) <- c("rate", "count", "population", "gender.f", "type", "age", "organ", "year")
+
+seer05<- seer %>%
+  select(contains("2005"), gender.f, type, age, organ)%>%
+  mutate(year = "2005")
+names(seer05) <- c("rate", "count", "population", "gender.f", "type", "age", "organ", "year")
+
+seer06<- seer %>%
+  select(contains("2006"), gender.f, type, age, organ)%>%
+  mutate(year = "2006")
+names(seer06) <- c("rate", "count", "population", "gender.f", "type", "age", "organ", "year")
+
+seer07<- seer %>%
+  select(contains("2007"), gender.f, type, age, organ)%>%
+  mutate(year = "2007")
+names(seer07) <- c("rate", "count", "population", "gender.f", "type", "age", "organ", "year")
+
+seer08<- seer %>%
+  select(contains("2008"), gender.f, type, age, organ)%>%
+  mutate(year = "2008")
+names(seer08) <- c("rate", "count", "population", "gender.f", "type", "age", "organ", "year")
+
+seer09<- seer %>%
+  select(contains("2009"), gender.f, type, age, organ)%>%
+  mutate(year = "2009")
+names(seer09) <- c("rate", "count", "population", "gender.f", "type", "age", "organ", "year")
+
+seer10<- seer %>%
+  select(contains("2010"), gender.f, type, age, organ)%>%
+  mutate(year = "2010")
+names(seer10) <- c("rate", "count", "population", "gender.f", "type", "age", "organ", "year")
+
+seer11<- seer %>%
+  select(contains("2011"), gender.f, type, age, organ)%>%
+  mutate(year = "2011")
+names(seer11) <- c("rate", "count", "population", "gender.f", "type", "age", "organ", "year")
+
+seer12<- seer %>%
+  select(contains("2012"), gender.f, type, age, organ)%>%
+  mutate(year = "2012")
+names(seer12) <- c("rate", "count", "population", "gender.f", "type", "age", "organ", "year")
+
+#merging to create new complete SEER dataset
+seer_new <- rbind(seer00, seer01, all=TRUE)
+seer_new <- rbind(seer_new, seer02, all = TRUE)
+seer_new <- rbind(seer_new, seer03, all = TRUE)
+seer_new <- rbind(seer_new, seer04, all = TRUE)
+seer_new <- rbind(seer_new, seer05, all = TRUE)
+seer_new <- rbind(seer_new, seer06, all = TRUE)
+seer_new <- rbind(seer_new, seer07, all = TRUE)
+seer_new <- rbind(seer_new, seer08, all = TRUE)
+seer_new <- rbind(seer_new, seer09, all = TRUE)
+seer_new <- rbind(seer_new, seer10, all = TRUE)
+seer_new <- rbind(seer_new, seer11, all = TRUE)
+seer_new <- rbind(seer_new, seer12, all = TRUE)
+
+#removing added extra row
+seer_new <- seer_new[-8904,]
+
+
+```
+
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(broom)
+
+rm(anal, cervical, oro, penile, seer, seer00, seer01, seer02, seer03, seer04, seer05, seer06, seer07, seer08, seer09, seer10, seer11, seer12, vulvar, vaginal)
+
+
+seer_new <- seer_new %>% filter(type== "SCC")
+
+## recoding the gender variable into "Female"=0, "Male"=1, "Male and Female"= 2
+seer_new$gender.f = factor(seer_new$gender.f, labels = c(0, 1, 2))
+
+
+## changing the class for all_gather$rate and all_gather$population into numeric
+
+sapply(seer_new, class)
+seer_new$rate <- as.numeric(seer_new$rate)
+seer_new$population <- as.numeric(gsub(",", "", seer_new$population))
+
+## filtering out for 0-15 years:
+
+seer_new$age.f = factor(seer_new$age)
+                          
+seer_new <- seer_new %>% select(-c(age, type))
+
+seer_new <- seer_new %>% filter(age.f != "00 years")
+seer_new <- seer_new  %>% filter(age.f != "01-04 years")
+seer_new <- seer_new %>% filter(age.f != "05-09 years")
+seer_new <- seer_new %>% filter(age.f != "10-14 years")          
+
+                                              
+
+## switch organ variable to a factor:
+seer_new$organ <- factor(seer_new$organ)
+
+```
+
+## Analyzing the differences between Male and Female:
+
+```{r}
+## quick summary of the  mean for each gender group:
+
+seer_new %>% group_by(gender.f) %>% summarize(c(mean(rate)))
+seer_new %>% group_by(gender.f) %>% summarize(c(mean(population)))
+
+## filtering out "MAle and Female" group in order to determine if there is a statistically significant difference in means between Male and Female for the rate and population variables:
+
+seer <- seer_new %>% filter(gender.f != 2)
+
+## for the rate variable:
+seer %>% ggplot(aes(gender.f, rate)) + geom_boxplot()
+
+t.test(rate ~ gender.f, data= seer)
+## The t-test shows that the p- value is smaller then 0.05 and 0 is not included the in the ##confidence interval.
+## This means that we can reject the null hypothesis and conclude that there is a statistically ##significant difference in the means of the rate of malignant cancer due
+##to HPV between Male and Female. 
+
+## for the population variable:
+seer %>% ggplot(aes(gender.f, population)) + geom_boxplot()
+
+t.test(population ~ gender.f, data= seer)
+
+## Similar to the t-test for rate, the t-test for population shows that there is a statistically significant difference in means between males and females for the proprotion of the U.S population included in the data set. Note: This could also explain the difference in means for the rate 
+
+```
+
+
+
+## Comparison between Male and Female for different types of cancer. 
+
+```{r}
+cancer_types <- seer %>% group_by(organ,gender.f) %>% summarize(mean=mean(rate)) %>% arrange(desc(mean))
+
+cancer_types
+
+cancer_types %>% ggplot(aes(organ, mean, color= gender.f)) + geom_point()
+
+seer %>% ggplot(aes(organ, rate, color= gender.f)) + geom_point()
+
+
+```
+
+## Adding up the count and population for each year, gender and organ:
+
+```{r}
+sapply(seer,class)
+seer$count <- as.numeric(seer$count)
+
+dat <- seer %>% select(-age.f) %>% group_by(year,gender.f, organ) %>% summarize(count= sum(count), pop= sum(population))
+  
+```
+
+## Joining SEER and NHANES:
+
+```{r}
+hpv <- merge(dat, NHANES, by = c("year", "gender.f"), all=TRUE)
+
+hpv <- hpv %>% select(-c(dietweight,examwt))
+
+hpv06 <- hpv %>%filter(year =="2006")
+hpv08 <- hpv %>%filter(year =="2008")
+hpv10 <- hpv %>%filter(year =="2010")
+hpv12 <- hpv %>% filter(year == "2012")
+
+hpv <- merge(hpv06, hpv08, all=TRUE)
+hpv <- merge(hpv, hpv10, all=TRUE)
+hpv <- merge(hpv, hpv12, all=TRUE)
+
+```
+
+## creating rate variable for 10,000 pop
+```{r}
+hpv <- hpv %>% mutate(cancer_rate= round((count/pop)*10^4, digits = 2))
+hist(hpv$cancer_rate)
+summary(hpv$cancer_rate)
+
+hpv <- hpv %>% mutate(cancer_count= count) %>% mutate(nocancer = (pop - count))
+
+save(hpv, file= "hpv.Rda")
+```
+
+## Naive model
+
+```{r}
+## codes for smoking:
+## 1	Every day	
+## 2	Some days	
+## 3	Not at all	
+## 7	Refused	
+## 9	Don't know	
+
+## Codes for education:
+## 1	Less Than 9th Grade	
+## 2	9-11th Grade (Includes 12th grade with no diploma)	
+## 3	High School Grad/GED or Equivalent	
+## 4	Some College or AA degree	
+## 5	College Graduate or above	
+## 7	Refused	
+## 9	Don't Know	
+
+## Codes for marital status:
+## 1	Married	
+## 2	Widowed	
+## 3	Divorced
+## 4	Separated		
+## 5	Never married	
+## 6	Living with partner		
+## 77	Refused		
+## 99	Don't know
+
+## Codes for race:
+## 1	Mexican American	
+## 2	Other Hispanic		
+## 3	Non-Hispanic White		
+## 4	Non-Hispanic Black	
+## 5	Other Race - Including Multi-Racial	
+
+library(broom)
+library(caret)
+hpv$specialdiet <- factor(hpv$specialdiet)
+hpv$kcal <- as.numeric(hpv$kcal)
+hpv$race <- factor(hpv$race)
+hpv$numpreg <- as.numeric(hpv$numpreg)
+hpv$numbirth <- as.numeric(hpv$numbirth)
+hpv$smoke <- factor(hpv$smoke)
+hpv$education <- factor(hpv$education)
+hpv$marital_status <- factor(hpv$marital_status)
+hpv$poverty_ratio <- as.numeric(hpv$poverty_ratio)
+hpv$gender.f <- factor(hpv$gender.f)
+hpv$weightloss_lowcal_lowcarb_hipro <- factor(hpv$weightloss_lowcal_lowcarb_hipro)
+hpv$lowfat <- factor(hpv$lowfat)
+hpv$lowNA <- factor(hpv$lowNA)
+hpv$sugfree <- factor(hpv$sugfree)
+hpv$lowfiber <- factor(hpv$lowfiber)
+hpv$hifiber <- factor(hpv$hifiber)
+hpv$diabeticdiet <- factor(hpv$diabeticdiet) 
+hpv$weightgain <- factor(hpv$weightgain) 
+hpv$othrediet <- factor(hpv$othrediet)
+
+hpv$specialdiet[hpv$specialdiet== 2] <- 0
+hpv$specialdiet[is.na(hpv$specialdiet)] <- 0
+hpv$numbirth[hpv$numbirth== 99] <- 0
+hpv$numpreg[hpv$numpreg > 20] <- 0 ## according to codebook the range of values is 1-20
+
+rm(hpv06, hpv08, hpv10, hpv12)
+
+#creating train and test set
+inTrain <- createDataPartition(y = hpv$cancer_rate, p = 0.8)
+train_set <- slice(hpv, inTrain$Resample1)
+test_set <- slice(hpv, -inTrain$Resample1)
+
+mod <- train_set %>% lm(cancer_rate ~ age  + c.hpv6 + c.hpv11 + c.hpv16 + c.hpv18 + c.hpv31 + c.hpv33 + c.hpv45 + c.hpv52 + c.hpv58 + race + numbirth + numpreg + smoke + education + marital_status + poverty_ratio + weightloss_lowcal_lowcarb_hipro + lowfat + lowNA + sugfree + lowfiber + hifiber + diabeticdiet + weightgain + othrediet + specialdiet + kcal, data=.)
+
+summary(mod)
+
+#RMSE
+RMSE <- function(true, predicted){
+    sqrt(mean((true - predicted)^2))
+}
+
+average_rate <- mean(train_set$cancer_rate)
+predictions <- rep(average_rate, nrow(test_set))
+naive_rmse <- RMSE(test_set$cancer_rate, predictions)
+print(naive_rmse)
+```
+
+
+##qqplots
+
+```{r}
+
+cols.num <- names(hpv %>% select(kcal, numbirth, numpreg,poverty_ratio))
+hpv[cols.num] <- sapply(hpv[cols.num],as.numeric)
+sapply(hpv, class)
+
+qqnorm(hpv$cancer_rate)
+qqline(hpv$cancer_rate, col= "red")
+
+qqnorm(hpv$kcal)
+qqline(hpv$kcal , col = "red")
+
+hpv %>% ggplot(aes(age, cancer_rate)) + geom_point() + geom_abline()
+
+qqnorm(hpv$numbirth)
+
+```
+
+
+## Logistic Regression:
+
+```{r}
+
+
+n <-glm( cbind(cancer_count, nocancer) ~ age + organ + c.hpv6 + c.hpv11 + c.hpv16 + c.hpv18 + c.hpv31 + c.hpv33 + c.hpv45 + c.hpv52 + c.hpv58 + c.oralhpv16 + race + numbirth + numpreg + smoke + education + marital_status + poverty_ratio + weightloss_lowcal_lowcarb_hipro + lowfat + lowNA + sugfree + lowfiber + hifiber + diabeticdiet + weightgain + othrediet + specialdiet + kcal, family = binomial, data = train_set)
+
+summary(n)
+
+## Turning the types of hpv into categorical:
+train_set <- train_set %>% gather(all_hpv, hpv_count, c.hpv6:c.oralhpv16)
+
+n1 <- glm( cbind(cancer_count, nocancer) ~ age + organ +  all_hpv + hpv_count + race + numbirth + numpreg + smoke + education + marital_status + poverty_ratio + specialdiet + kcal, family = binomial, data = train_set)
+
+summary(n1)
+
+## drop1(n1, test="Chisq")       "It takes time to run!"
+
+## running the regression for only people who smoke:
+train_set$yessmoke <- train_set$smoke == c("1", "2")
+
+n2 <- glm( cbind(cancer_count, nocancer) ~ age + organ + all_hpv + hpv_count + race + numbirth + numpreg + yessmoke + education + marital_status + poverty_ratio + specialdiet + kcal, family = binomial, data = train_set)
+
+summary(n2)
+
+## running the regression for only people who don't have any college level education:
+train_set$nocollege <- train_set$education == c("1", "2")
+
+n3 <- glm( cbind(cancer_count, nocancer) ~ age + organ + all_hpv + hpv_count + race + numbirth + numpreg + yessmoke + nocollege + marital_status + poverty_ratio + specialdiet + kcal, family = binomial, data = train_set)
+
+summary(n3)
+
+## running the regression for  people who are not married:
+train_set$notmarried <- train_set$marital_status != "1"
+
+n4 <- glm( cbind(cancer_count, nocancer) ~ age + organ + all_hpv + hpv_count + race + numbirth + numpreg + yessmoke + nocollege + notmarried + poverty_ratio + specialdiet + kcal, family = binomial, data = train_set)
+
+summary(n4)
+
+## number of preg vs. number of birth:(these two are highly correlated and only one is needed)
+## dimention reduction later will show the same conclusion
+
+plot(train_set$numpreg, train_set$numbirth)
+
+n5 <- glm( cbind(cancer_count, nocancer) ~ age + organ + all_hpv + hpv_count + race + numpreg + yessmoke + nocollege + notmarried + poverty_ratio + specialdiet + kcal, family = binomial, data = train_set)
+
+summary(n5)
+
+## adding second term factors:( note: This will take a few min to run, that's why I have commented out!)
+## add1(n5, ~.^2,test="Chisq")
+
+## adding interactive terms:
+
+n6 <- glm( cbind(cancer_count, nocancer) ~ age + organ + all_hpv + hpv_count + race + numpreg + yessmoke + nocollege + notmarried + poverty_ratio + specialdiet + kcal + age:organ + age:numpreg + age:notmarried + age:poverty_ratio + age:kcal + organ:hpv_count + organ:race + organ:nocollege + organ:notmarried + organ:poverty_ratio + organ:kcal + all_hpv:hpv_count + race:numpreg + race:kcal + yessmoke:nocollege + yessmoke:specialdiet + yessmoke:kcal + poverty_ratio:specialdiet, family = binomial, data = train_set)
+
+summary(n6)
+
+
+## calculating the change in deviance:
+anova(n5,n6)
+## drop in deviance by 2856.1
+
+
+## dropping age:numpreg, organ:kcal, poverty_ratio:specialdiet, age:notmarried
+
+n7 <- glm( cbind(cancer_count, nocancer) ~ age + organ + all_hpv + hpv_count + race + numpreg + yessmoke + nocollege + notmarried + poverty_ratio + specialdiet + kcal + age:organ + age:poverty_ratio + organ:hpv_count + organ:race + organ:nocollege + organ:notmarried + organ:poverty_ratio+ all_hpv:hpv_count + race:numpreg + race:kcal + yessmoke:nocollege + yessmoke:specialdiet + yessmoke:kcal, family = binomial, data = train_set)
+
+summary(n7)
+
+## dropping organ:poverty_ratio, 
+
+n8 <- glm( cbind(cancer_count, nocancer) ~ age + organ + all_hpv + hpv_count + race + numpreg + yessmoke + nocollege + notmarried + poverty_ratio + specialdiet + kcal + age:organ + age:poverty_ratio + organ:hpv_count + organ:race + organ:nocollege + organ:notmarried + all_hpv:hpv_count + race:numpreg + race:kcal + yessmoke:nocollege + yessmoke:specialdiet + yessmoke:kcal, family = binomial, data = train_set)
+
+summary(n8)
+
+
+## removing yessmoke:nocollege 
+
+n10 <- glm( cbind(cancer_count, nocancer) ~ age + organ + all_hpv + hpv_count + race + numpreg + yessmoke + nocollege + notmarried + poverty_ratio + specialdiet + kcal + organ:hpv_count + all_hpv:hpv_count, family = binomial, data = train_set)
+
+summary(n10)
+
+## trying only for race= hispanic
+
+train_set$hispanic <- train_set$race == "2"
+
+n11 <- glm( cbind(cancer_count, nocancer) ~ age + organ + all_hpv + hpv_count + hispanic + numpreg + yessmoke + nocollege + notmarried + poverty_ratio + specialdiet + kcal + organ:hpv_count + all_hpv:hpv_count, family = binomial, data = train_set)
+
+summary(n11)
+
+n11<- update(n11, ~ . - specialdiet)
+
+```
+
+## Making the same changes to the test_set:
+```{r}
+test_set <- test_set %>% gather(all_hpv, hpv_count, c.hpv6:c.oralhpv16)
+test_set$yessmoke <- test_set$smoke == c("1", "2")
+test_set$nocollege <- test_set$education == c("1", "2")
+test_set$notmarried <- test_set$marital_status != "1"
+test_set$hispanic <- test_set$race == "2"
+```
+
+## Predictions for model n11:
+```{r}
+
+f_hat2 <- predict(n11, newdata = test_set)
+
+```
+
+## Dimension Reduction:
+
+```{r}
+
+X <- train_set %>% select(age, hpv_count , poverty_ratio , numbirth, numpreg, kcal) %>% as.matrix()
+
+
+X[is.na(X)] <-0
+cc = cor(X)
+image(cc)
+
+pc <- prcomp(X)
+
+plot(pc$sdev)
+plot(pc$sdev^2/sum(pc$sdev^2))
+summary(pc)$importance[,1:5]
+
+```
+
+## Final Model:
+
+```{r}
+
+final_fit <- lm( cancer_rate ~ age + organ + all_hpv + hpv_count + hispanic + numpreg + yessmoke + nocollege + notmarried + poverty_ratio + kcal + organ:hpv_count + all_hpv:hpv_count, data = train_set)
+
+summary(final_fit)
+```
+
+## Prediction on test set:
+
+```{r}
+library(e1071)
+library(caret)
+
+tidy(final_fit)
+
+f_hat <- predict(final_fit, newdata = test_set)
+tab <- table(pred=round(f_hat, digits= 2), truth=test_set$cancer_rate)
+
+pred <- round(f_hat, digits= 2)
+truth <- test_set$cancer_rate
+residual <- truth - pred
+
+tmp <- cbind(pred, truth)
+table(residual)
+tmp <- data.frame(tmp)
+tmp %>% ggplot(aes(pred, truth)) + geom_jitter() + geom_abline(col= "red")
+```
+
+## Fiiting two different models for male and female:
+
+```{r}
+
+male <- train_set %>% filter(gender.f == "1")
+
+## numpreg is removed for male:
+male_fit <-lm( cancer_rate~ age + organ + all_hpv + hpv_count + hispanic + yessmoke + nocollege + notmarried + poverty_ratio + kcal + organ:hpv_count + all_hpv:hpv_count, data = male)
+
+summary(male_fit)
+
+female <- train_set %>% filter(gender.f == "0")
+
+female_fit <-lm( cancer_rate~ age + organ + all_hpv + hpv_count + hispanic + yessmoke + nocollege + notmarried + poverty_ratio + numpreg + kcal + organ:hpv_count + all_hpv:hpv_count, data = female) 
+
+summary(female_fit)
+
+plot(male_fit)
+plot(female_fit)
+
+```
+
+## The differences of cancer rate for different types of cancers based on years:
+```{r}
+hpv %>% group_by(year, organ) %>% ggplot(aes(organ,cancer_rate, color= year)) + geom_point()
+
+```
+
+
+
+
